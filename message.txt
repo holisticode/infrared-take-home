@@ -1,0 +1,134 @@
+If you don't have access to the sibling hashes already and are trying to construct a proof for an element in the BeaconState while reading from a beacon node, indeed you'll need to retrieve the state and construct the Merkle root from scratch. Here’s how you can approach this task effectively.
+
+### Steps to Construct a Merkle Proof from Beacon State
+
+1. **Access the Beacon Node**: You need to interact with the Beacon Node to retrieve the current Beacon State. You can typically do this via an HTTP API provided by the node.
+
+2. **Examine the Data Structure**: Understand the structure of the BeaconState. The main components you may want to consider include `validators`, `balances`, `slots`, etc. Each of these is often represented in a list or a mapping.
+
+3. **Retrieving Leaves**: You will have to determine how the leaves are defined in your data structure. For instance, if `balances` is a list, each index could represent a different validator's balance.
+
+4. **Building the Merkle Tree**:
+   - You don't need to read the entire state if you only need proof for a specific element; however, to create the Merkle proof, you will need to traverse the whole tree at least once.
+   - Hash the leaves and create the branches (pairs of leaves) until you reach the root.
+
+5. **Generating the Proof**:
+   - Collect the necessary sibling hashes as you build the Merkle tree so you can later verify.
+
+### Example Procedure
+
+Here's an example approach in Go, assuming you have set up access to the beacon node:
+
+1. **Fetch the State from the Beacon Node**:
+
+You'll typically fetch it using an API call, something like this:
+
+```go
+// Assuming you have a function to fetch state from a Beacon Node
+func fetchBeaconState() (*BeaconState, error) {
+    // Code to make API request to fetch the Beacon State
+    // Here you'd utilize the net/http package and decode the response
+}
+```
+
+2. **Parse the State**:
+
+You should parse the retrieved state into your Go structures.
+
+3. **Build the Merkle Tree**:
+   
+You can utilize the method outlined in the previous response. Here’s a simplified example just to illustrate the concept:
+
+```go
+func buildMerkleTreeFromState(state *BeaconState) ([]byte, [][]byte) {
+    // Example assuming `state` contains balances in a slice
+    var leaves [][]byte
+    for _, balance := range state.Balances {
+        leaves = append(leaves, hash(balance))
+    }
+
+    tree := NewMerkleTree(leaves)
+    return tree.Root, tree.GenerateProof(0) // Generate proof for the first balance as an example
+}
+```
+
+### Complete Example 
+
+The flow would be as follows:
+
+1. Fetch the Beacon state from your beacon node.
+2. Construct the Merkle tree based on the specific elements you are interested in.
+3. Generate the proof using the constructed tree.
+
+Here is an extended example that outlines the complete flow:
+
+```go
+package main
+
+import (
+    "crypto/sha256"
+    "encoding/json"
+    "fmt"
+    "net/http"
+)
+
+// BeaconState represents the data structure for the Beacon state's relevant fields.
+type BeaconState struct {
+    Balances []string `json:"balances"` // Adjust to match your actual balance format
+}
+
+// Hash function to hash inputs
+func hash(data []byte) []byte {
+    h := sha256.New()
+    h.Write(data)
+    return h.Sum(nil)
+}
+
+// Fetch the Beacon state from the Beacon Node API
+func fetchBeaconState() (*BeaconState, error) {
+    resp, err := http.Get("http://localhost:5052/beacon/state/latest") // Adjust URL appropriately
+    if err != nil {
+        return nil, err
+    }
+    defer resp.Body.Close()
+
+    var state BeaconState
+    if err := json.NewDecoder(resp.Body).Decode(&state); err != nil {
+        return nil, err
+    }
+    return &state, nil
+}
+
+// Build the Merkle Tree from Beacon State
+func buildMerkleTreeFromState(state *BeaconState) ([]byte, [][]byte) {
+    // Convert balances to leaves (You might want to use the correct format)
+    var leaves [][]byte
+    for _, balance := range state.Balances {
+        leaves = append(leaves, hash([]byte(balance)))  // Convert to []byte
+    }
+
+    tree := NewMerkleTree(leaves)
+    return tree.Root, tree.GenerateProof(0) // Example of generating proof for the first leaf
+}
+
+func main() {
+    state, err := fetchBeaconState()
+    if err != nil {
+        fmt.Println("Error fetching beacon state:", err)
+        return
+    }
+
+    root, proof := buildMerkleTreeFromState(state)
+    fmt.Printf("Merkle Root: %x\n", root)
+    fmt.Printf("Merkle Proof: %+v\n", proof)
+}
+```
+
+### Important Considerations
+
+- **API Endpoint**: Make sure you have the correct endpoint and that your Beacon Node is running and accessible.
+- **Data Format**: This code assumes balances are strings; adjust the parsing according to your actual data format.
+- **Memory Efficiency**: Building the entire tree for large states can be memory-intensive; if you can modify your approach to only handle the portion of the state relevant to your proof request, that would help.
+- **Dependencies**: Make sure to handle dependencies effectively and manage imports (like `net/http` and `encoding/json`).
+
+This approach should help you systematically read the Beacon State and construct Merkle proofs while minimizing confusion and complexity. If you have specific elements or structures in mind, you can tailor the examples further to meet your needs!
