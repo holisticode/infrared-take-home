@@ -7,6 +7,13 @@ import (
 	"github.com/cbergoon/merkletree"
 )
 
+/**
+This file is now OBSOLETE
+
+I first wanted to do proofs about Validator information,
+but then went to do Randao
+*/
+
 type ValidatorData struct {
 	Data ValidatorInfo
 }
@@ -16,17 +23,6 @@ type ValidatorInfo struct {
 	Balance   string
 	Status    string
 	Validator ValidatorDetails
-}
-
-type ValidatorDetails struct {
-	Pubkey                     string
-	WithdrawalCredentials      string
-	EffectiveBalance           string
-	Slashed                    bool
-	ActivationEligibilityEpoch string
-	ActivationEpoch            string
-	ExitEpoch                  string
-	WithdrawableEpoch          string
 }
 
 type ValidatorStringContent struct {

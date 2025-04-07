@@ -2,19 +2,51 @@ package pkg
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
-	"os"
 	"reflect"
 	"strings"
 
-	"github.com/ethereum/go-ethereum/ethclient"
 	mt "github.com/txaty/go-merkletree"
 )
 
+/**
+This is the main file for the Randao proof generation task.
+It loads a beacon state from a static JSON file,
+generates the Merkle tree and the proof for the whole chain:
+
+* That a particular Randao is contained in randao_mixes
+* That that randao_mixes is contained in the beacon state
+* That this beacon state is contained in the block
+
+WARNING: This code has probably a problem, in that it loads
+the beacon state as JSON file, taking as example data from
+https://ethereum.github.io/beacon-APIs/#/Debug/getStateV2.
+
+It uses reflection to build the MerkleTree of the state from this JSON.
+However, because it is NOT using SSZ, some convertions
+(notably numbers) may not be correct according to the spec.
+
+In other words, the proof within a real EIP-4788 contract inside
+an EVM would most probably fail.
+
+I couldn't find a usable SSZ parser which would have helped with this task,
+and writing my own felt like using a lot of the time available for the task.
+*/
+
+// DataLoader is an enum type to tell if load from File or API
+// Currently only File is supported
+type DataLoader int
+
+const (
+	API DataLoader = iota
+	FILE
+)
+
+// ByteArray implements the `mt.DataBlock` interface used
+// to create Merkle Trees
+// github.com/txaty/go-merkletree
 type ByteArray struct {
 	data []byte
 }
@@ -23,93 +55,165 @@ func (bt *ByteArray) Serialize() ([]byte, error) {
 	return bt.data, nil
 }
 
-type BeaconStateDataLeaf struct {
-	Field string
-	data  []byte
+// RandaoProofWrapper encapsulates all the results
+// obtained from the proof generation
+type RandaoProofWrapper struct {
+	RandaoMixesTree       *mt.MerkleTree
+	RandaoProof           *mt.Proof
+	RandaoMixesDataBlocks []mt.DataBlock
+	RandaoTargetIndex     int
+
+	BeaconStateTree        *mt.MerkleTree
+	RandaoMixesProof       *mt.Proof
+	BeaconStateDataBlocks  []mt.DataBlock
+	BeaconStateTargetIndex int
+
+	BlockRootTree        *mt.MerkleTree
+	StateProof           *mt.Proof
+	BlockRootDataBlocks  []mt.DataBlock
+	BlockRootTargetIndex int
 }
 
-func (bt *BeaconStateDataLeaf) Serialize() ([]byte, error) {
-	return bt.data, nil
-}
-
+// AssembleRandaoProof is the entry point from main
 func AssembleRandaoProof(
-	clint *ethclient.Client,
 	randaoIndex int,
+	source DataLoader,
 ) error {
-	/*
-		resp, err := http.Get(RANDAO_API)
+
+	// load the JSON files
+	state, blockData, err := loadData(source, "pkg/")
+	if err != nil {
+		return fmt.Errorf("failed loading state data %v", err)
+	}
+
+	// create the proofs
+	results, err := assembleRandaoProofGenerator(state, blockData, randaoIndex)
+	if err != nil {
+		return fmt.Errorf("failed to assemble trees and proofs: %v", err)
+	}
+
+	// print results
+	log.Printf("randao_mixes root: %x\n", results.RandaoMixesTree.Root)
+	log.Print("randao proof: [")
+	for i, p := range results.RandaoProof.Siblings {
+		fmt.Printf(" %x", p)
+		if i < len(results.RandaoProof.Siblings)-1 {
+			fmt.Print(",")
+		}
+	}
+	fmt.Print(" ]\n")
+	log.Printf("beacon state root: %x\n", results.BeaconStateTree.Root)
+	log.Print("randao_mixes proof: [")
+	for i, p := range results.RandaoMixesProof.Siblings {
+		fmt.Printf(" %x", p)
+		if i < len(results.RandaoMixesProof.Siblings)-1 {
+			fmt.Print(",")
+		}
+	}
+	fmt.Print(" ]\n")
+	log.Printf("block tree root: %x\n", results.BlockRootTree.Root)
+	log.Print("state proof: [")
+	for i, p := range results.StateProof.Siblings {
+		fmt.Printf(" %x", p)
+		if i < len(results.StateProof.Siblings)-1 {
+			fmt.Print(",")
+		}
+	}
+	fmt.Print(" ]\n")
+	return nil
+}
+
+// loadData loads the required data structures
+func loadData(source DataLoader, prefix string) (*BeaconStateData, *BeaconBlockData, error) {
+	var (
+		state     *BeaconStateData
+		blockData *BeaconBlockData
+		err       error
+	)
+
+	if source == FILE {
+		state, err = loadBeaconStateFromFile(prefix + JSON_STATE_TEST_FILE)
 		if err != nil {
-			return err
+			return nil, nil, fmt.Errorf("failed opening state data test file: %v", err)
 		}
-
-		var randaoData RandaoData
-		if err := json.NewDecoder(resp.Body).Decode(&randaoData); err != nil {
-			return err
+		blockData, err = loadBeaconBlockFromFile(prefix + JSON_BLOCK_TEST_FILE)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed opening block data test file: %v", err)
 		}
-		resp.Body.Close()
-
-		randao := randaoData.Data.Randao
-
-					resp, err = http.Get(BEACON_STATE_API)
-					if err != nil {
-						return err
-					}
-				defer resp.Body.Close()
-			var state BeaconStateData
-			if err := json.NewDecoder(resp.Body).Decode(&state); err != nil {
-				return fmt.Errorf("failed decoding json from API: %v", err)
-			}
-	*/
-	jsonFile, err := os.Open("pkg/beacon_state_test_data.json")
-	// if we os.Open returns an error then handle it
-	if err != nil {
-		return fmt.Errorf("failed to open json file: %v", err)
-	}
-	log.Println("Successfully opened json file")
-	// defer the closing of our jsonFile so that we can parse it later on
-	defer jsonFile.Close()
-
-	byteJSON, err := io.ReadAll(jsonFile)
-	if err != nil {
-		return err
-	}
-	var state BeaconStateData
-	if err := json.Unmarshal(byteJSON, &state); err != nil {
-		return fmt.Errorf("failed decoding json from file: %v", err)
-	}
-
-	beaconStateLeaves, err := calculateBeaconStateLeaves(&state.Data)
-	if err != nil {
-		return err
-	}
-	beaconStateTreeBlocks, err := getMerkleTreeDataBlocksFromStrings(beaconStateLeaves)
-	if err != nil {
-		return err
-	}
-	cf := getMerkleTreeconfig()
-	beaconStateTree, err := mt.New(cf, beaconStateTreeBlocks)
-	if err != nil {
-		return err
-	}
-
-	beaconStateRoot := beaconStateTree.Root
-	rdProof, err := beaconStateTree.Proof(beaconStateTreeBlocks[14])
-	if err != nil {
-		return err
-	}
-	ok, err := beaconStateTree.Verify(beaconStateTreeBlocks[14], rdProof)
-	if err != nil {
-		return err
-	}
-	if ok {
-		log.Println("successfully verified randao proof in randao mixes")
 	} else {
-		log.Fatal("verification or randao proof in randao mixes failed!")
+		state, err = queryBeaconStateAPI(BEACON_STATE_API)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed opening state data from API: %v", err)
+		}
+		// omitted block data as actually turned out API is inconsistent
+	}
+	return state, blockData, nil
+}
+
+// assembleRandaoProofGenerator does the heavy lifting.
+// For each level, it creates a MerkleTree and its proof
+func assembleRandaoProofGenerator(
+	state *BeaconStateData,
+	blockData *BeaconBlockData,
+	randaoIndex int,
+) (*RandaoProofWrapper, error) {
+
+	block := blockData.Data.Header.Message
+	beaconState := state.Data
+	randaoMixes := state.Data.RandaoMixes
+
+	// prove randao in randao mixes
+	randaoMixesTree, randaoMixesDataBlocks, err := createRandaoMixesTree(randaoIndex, randaoMixes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create tree for randao mixes: %v", err)
+	}
+	randaoProof, err := randaoMixesTree.Proof(randaoMixesDataBlocks[randaoIndex])
+	if err != nil {
+		return nil, err
 	}
 
-	fmt.Printf("beaconStateRoot %x\n", beaconStateRoot)
+	// prove randao_mixes inside beacon state
+	beaconStateTree, beaconStateDataBlocks, err := createBeaconTree(&beaconState)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create beacon state tree: %v", err)
+	}
+	randaoMixesProof, err := beaconStateTree.Proof(beaconStateDataBlocks[RANDAO_MIXES_INDEX])
+	if err != nil {
+		return nil, err
+	}
 
-	randaoMixes := state.Data.RandaoMixes
+	// prove state inside the block root
+	blockRootTree, blockRootTreeDataBlocks, err := block.CreateBeaconBlockTreeBlocks()
+	if err != nil {
+		return nil, fmt.Errorf("failed creating block tree blocks: %v", err)
+	}
+	stateProof, err := blockRootTree.Proof(blockRootTreeDataBlocks[STATE_ROOT_INDEX])
+	if err != nil {
+		return nil, fmt.Errorf("failed creating proof for state hash: %v", err)
+	}
+
+	result := &RandaoProofWrapper{
+		RandaoMixesTree:       randaoMixesTree,
+		RandaoProof:           randaoProof,
+		RandaoMixesDataBlocks: randaoMixesDataBlocks,
+		RandaoTargetIndex:     randaoIndex,
+
+		BeaconStateTree:        beaconStateTree,
+		RandaoMixesProof:       randaoMixesProof,
+		BeaconStateDataBlocks:  beaconStateDataBlocks,
+		BeaconStateTargetIndex: RANDAO_MIXES_INDEX,
+
+		BlockRootTree:        blockRootTree,
+		StateProof:           stateProof,
+		BlockRootDataBlocks:  blockRootTreeDataBlocks,
+		BlockRootTargetIndex: STATE_ROOT_INDEX,
+	}
+
+	return result, nil
+
+}
+
+func createRandaoMixesTree(randaoIndex int, randaoMixes []string) (*mt.MerkleTree, []mt.DataBlock, error) {
 	randao := randaoMixes[randaoIndex]
 	bt := make([]mt.DataBlock, len(randaoMixes))
 
@@ -120,70 +224,40 @@ func AssembleRandaoProof(
 		}
 		b, err := hex.DecodeString(r[2:])
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 		bt[i] = &ByteArray{data: b}
 	}
 
 	if index == -1 {
-		return errors.New("the randao wasn't in the list, as was expected")
+		return nil, nil, errors.New("the randao wasn't in the list, as was expected")
 	}
 
-	control, err := mt.New(cf, bt)
+	cf := getMerkleTreeconfig()
+	randaoTree, err := mt.New(cf, bt)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
-	ctrlRoot := control.Root
-	cproof, err := control.Proof(bt[randaoIndex])
-	if err != nil {
-		return err
-	}
-	ok, err = control.Verify(bt[randaoIndex], cproof)
-	if err != nil {
-		return err
-	}
-	if ok {
-		log.Println("successfully verified randao proof in block root")
-	} else {
-		log.Fatal("verification or randao proof in block root failed!")
-	}
-	fmt.Printf("ctrlRoot %x\n", ctrlRoot)
-
-	/*
-		proof := mtree.GenerateProof(index)
-
-			for _, p := range proof {
-				fmt.Printf("%x\n", p)
-			}
-	*/
-
-	return nil
-
+	return randaoTree, bt, nil
 }
 
-func getMerkleTreeDataBlocksFromStrings(data []string) ([]mt.DataBlock, error) {
-	var err error
-	bt := make([]mt.DataBlock, len(data))
-	for i, s := range data {
-		data := s
-		var arr []byte
-		// if it's a hex string we should decode it
-		if strings.HasPrefix(s, "0x") {
-			data = s[2:]
-			arr, err = hex.DecodeString(data)
-			// TODO: This is probably INCORRECT due to the JSON encoding,
-			// which returns strings when there are uints or other number formats
-			// the correct implementation is probably hashing number values, not their string rep
-		} else {
-			arr = []byte(data)
-		}
-		if err != nil {
-			return nil, err
-		}
-		b := &ByteArray{data: arr}
-		bt[i] = b
+func createBeaconTree(beaconState *BeaconStateSimplified) (*mt.MerkleTree, []mt.DataBlock, error) {
+	beaconStateLeaves, err := calculateBeaconStateLeaves(beaconState)
+	if err != nil {
+		return nil, nil, err
 	}
-	return bt, nil
+
+	bt, err := getMerkleTreeDataBlocksFromStrings(beaconStateLeaves)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	cf := getMerkleTreeconfig()
+	beaconStateTree, err := mt.New(cf, bt)
+	if err != nil {
+		return nil, nil, err
+	}
+	return beaconStateTree, bt, nil
 }
 
 func buildMerkleTreeFromStrings(data []string) (*mt.MerkleTree, error) {
@@ -194,36 +268,47 @@ func buildMerkleTreeFromStrings(data []string) (*mt.MerkleTree, error) {
 	return mt.New(nil, bt)
 }
 
-/*
-func hashStringArray(data []string) (RootHash, error) {
-	var list []merkletree.Content
+func getMerkleTreeDataBlocksFromStrings(data []string) ([]mt.DataBlock, error) {
+	var err error
+	bt := make([]mt.DataBlock, len(data))
 
-	for _, s := range data {
-		data := s
+	for i, s := range data {
+		dat := s
+		var arr []byte
+		// if it's a hex string we should decode it
 		if strings.HasPrefix(s, "0x") {
-			data = s[2:]
+			dat = s[2:]
+			arr, err = hex.DecodeString(dat)
+			// TODO: This is probably INCORRECT due to the JSON encoding,
+			// which returns strings when there are uints or other number formats
+			// the correct implementation is probably hashing number values, not their string rep
+			// As it is generic here, I decided to leave this as this for the sake of the test
+		} else {
+			arr = []byte(dat)
 		}
-		list = append(list, ValidatorStringContent{Field: data})
+		if err != nil {
+			return nil, err
+		}
+		b := &ByteArray{data: arr}
+		bt[i] = b
 	}
-
-	t, err := merkletree.NewTree(list)
-	if err != nil {
-		return RootHash{0}, err
-	}
-
-	//Get the Merkle Root of the tree
-	mr := t.MerkleRoot()
-	return RootHash(mr), nil
+	return bt, nil
 }
-*/
 
+// calculateBeaconStateLeaves uses reflection to gather all leaves of the BeaconState
+// data structure. I realized ONLY LATER that this would probably result in violating
+// the SSZ spec, because the JSON API returns strings for different data types, which,
+// to calculate the correct hashes, should be converted to their original data types,
+// and the converted to []byte for hashing.
 func calculateBeaconStateLeaves(bs *BeaconStateSimplified) ([]string, error) {
 	var list []string
 	state := reflect.ValueOf(*bs)
 
+	// iterate all fields of BeaconStateSimplified
 	for i := 0; i < state.NumField(); i++ {
 		field := state.Field(i).Interface()
 		fieldType := reflect.TypeOf(field)
+		// direct leaf as string
 		if fieldType == reflect.TypeOf("") {
 			// this is a direct leaf, hash it and encode to hex
 			strVal := field.(string)
@@ -234,6 +319,7 @@ func calculateBeaconStateLeaves(bs *BeaconStateSimplified) ([]string, error) {
 				fieldHash := hash([]byte(strVal))
 				list = append(list, hex.EncodeToString(fieldHash))
 			}
+			// a slice of strings, e.g. BlockRoots
 		} else if fieldType.Kind() == reflect.Slice && fieldType.Elem() == reflect.TypeOf("") {
 			subTree, err := buildMerkleTreeFromStrings(field.([]string))
 			if err != nil {
@@ -242,6 +328,7 @@ func calculateBeaconStateLeaves(bs *BeaconStateSimplified) ([]string, error) {
 			subRoot := subTree.Root
 			subRootStr := hex.EncodeToString(subRoot)
 			list = append(list, subRootStr)
+			// a slice of struct, e.g. []Eth1Data
 		} else if fieldType.Kind() == reflect.Slice && fieldType.Elem().Kind() == reflect.Struct {
 			var subList []string
 			for i := 0; i < reflect.ValueOf(field).Len(); i++ {
@@ -261,6 +348,7 @@ func calculateBeaconStateLeaves(bs *BeaconStateSimplified) ([]string, error) {
 			subRoot := subTree.Root
 			subRootStr := hex.EncodeToString(subRoot)
 			list = append(list, subRootStr)
+			// a struct of different type, e.g. Fork
 		} else if fieldType.Kind() == reflect.Struct {
 			strlist := iterateFieldsOfStruct(reflect.ValueOf(field))
 			subTree, err := buildMerkleTreeFromStrings(strlist)
@@ -278,6 +366,7 @@ func calculateBeaconStateLeaves(bs *BeaconStateSimplified) ([]string, error) {
 	return list, nil
 }
 
+// get all fields for a sub struct
 func iterateFieldsOfStruct(field reflect.Value) []string {
 	//structType := reflect.ValueOf(field)
 	var strlist []string
@@ -294,24 +383,4 @@ func iterateFieldsOfStruct(field reflect.Value) []string {
 		}
 	}
 	return strlist
-}
-
-func getMerkleTreeconfig() *mt.Config {
-	return &mt.Config{
-		// Customizable hash function used for tree generation.
-		HashFunc: defaultHashFunc,
-		// Number of goroutines run in parallel.
-		// If RunInParallel is true and NumRoutine is set to 0, use number of CPU as the number of goroutines.
-		NumRoutines: 0,
-		// Mode of the Merkle Tree generation.
-		Mode: mt.ModeProofGenAndTreeBuild,
-		// If RunInParallel is true, the generation runs in parallel, otherwise runs without parallelization.
-		// This increase the performance for the calculation of large number of data blocks, e.g. over 10,000 blocks.
-		RunInParallel: true,
-		// SortSiblingPairs is the parameter for OpenZeppelin compatibility.
-		// If set to `true`, the hashing sibling pairs are sorted.
-		SortSiblingPairs: false,
-		// If true, the leaf nodes are NOT hashed before being added to the Merkle Tree.
-		DisableLeafHashing: false,
-	}
 }

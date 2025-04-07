@@ -1,7 +1,16 @@
 package pkg
 
+/**
+	This file contains manual MerkleTree construction code I copied from elsewhere.
+	I was mainly interested in the VerifyProof function, so that I would be able to
+	verify the merkle proof without using the github.com/txaty/go-merkletree
+	which uses its own custom interface with `DataBlock`s.
+
+	Basically a fall back solution
+**/
+
 import (
-	"crypto/sha256"
+	"encoding/hex"
 )
 
 // Structure for the Merkle Tree
@@ -63,9 +72,19 @@ func (mt *MerkleTree) GenerateProof(index int) [][]byte {
 	return proof
 }
 
-// Hash function to hash inputs
-func hash(data []byte) []byte {
-	h := sha256.New()
-	h.Write(data)
-	return h.Sum(nil)
+// needed to introduce this to avoid name clash with the
+// hash variable in VerifyProof
+var calchash = hash
+
+func VerifyProof(leaf []byte, proof [][]byte, root []byte, leafIndex int) bool {
+	hash := leaf
+	for _, sibling := range proof {
+		if leafIndex%2 == 0 {
+			hash = calchash(append(hash, sibling...))
+		} else {
+			hash = calchash(append(sibling, hash...))
+		}
+		leafIndex /= 2
+	}
+	return hex.EncodeToString(hash) == hex.EncodeToString(root)
 }

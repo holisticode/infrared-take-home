@@ -10,12 +10,42 @@ type Version string
 type Hash32 [32]byte
 type Bytes32 []string
 
+/**
+This file contains mappings to the data structures for beacon state
+as defined in https://github.com/ethereum/consensus-specs/blob/dev/specs/phase0/beacon-chain.md
+
+NOTE: As I was using JSON, many data types do NOT match the actual spec, although
+the same spec clearly defines which data types are mapped to string for JSON
+(which this implementation uses)
+*/
+
+// BeaconStateData is the wrapper needed to fetch
+// JSON data for the beacon state
+type BeaconStateData struct {
+	Data BeaconStateSimplified
+}
+
+// RandaoData is the wrapper needed to fetch
+// JSON data for the randao value
+// In this implementation not needed
+type RandaoData struct {
+	Data Randao
+}
+
+// Randao is the container for the randao value
+// when unpacked from API
+type Randao struct {
+	Randao string
+}
+
+// Fork as per spec
 type Fork struct {
 	PreviousVersion string
 	CurrentVersion  string
 	Epoch           string
 }
 
+// BeaconBlockHeader
 type BeaconBlockHeader struct {
 	Slot          string
 	ProposerIndex string
@@ -23,16 +53,33 @@ type BeaconBlockHeader struct {
 	StateRoot     string
 	BodyRoot      string
 }
+
+// Eth1Data
 type Eth1Data struct {
 	DepositRoot  string `json:"deposit_root"`
 	DepositCount string `json:"deposit_count"`
 	BlockHash    string `json:"block_hash"`
 }
 
+// ValidatorDetails holds validator data
+type ValidatorDetails struct {
+	Pubkey                     string
+	WithdrawalCredentials      string
+	EffectiveBalance           string
+	Slashed                    bool
+	ActivationEligibilityEpoch string
+	ActivationEpoch            string
+	ExitEpoch                  string
+	WithdrawableEpoch          string
+}
+
+// Checkpoint
 type Checkpoint struct {
 	Epoch string
 	Root  string
 }
+
+// AttestationData
 type AttestationData struct {
 	Slot            string
 	Index           string
@@ -41,6 +88,7 @@ type AttestationData struct {
 	Target          Checkpoint
 }
 
+// PendingAttestation
 type PendingAttestation struct {
 	AggregationBits string
 	Data            AttestationData
@@ -48,6 +96,10 @@ type PendingAttestation struct {
 	ProposerIndex   string
 }
 
+// BeaconStateSimplified is actually the container for
+// BeaconState. Called it Simplified because it uses string
+// data types for the JSON fields (Understood only later
+// that the spec explicitly specifies this for JSON endpoints)
 type BeaconStateSimplified struct {
 	GenesisTime           string `json:"genesis_time"`
 	GenesisValidatorsRoot string `json:"genesis_validators_root"`
@@ -83,36 +135,4 @@ type BeaconStateSimplified struct {
 	PreviousJustifiedCheckpoint Checkpoint `json:"previous_justified_checkpoint"`
 	CurrentJustifiedCheckpoint  Checkpoint `json:"current_justified_checkpoint"`
 	FinalizedCheckpoint         Checkpoint `json:"finalized_checkpoint"`
-}
-
-type BeaconState struct {
-	GenesisTime           string
-	GenesisValidatorsRoot Root
-	Slot                  Slot
-	Fork                  Fork
-	//History
-	LatestBlockHeader BeaconBlockHeader
-	BlockRoots        []Root
-	StateRoots        []Root
-	HistoricalRoots   []Root
-	//Eth1
-	Eth1Data         Eth1Data
-	Eth1DataVotes    []Eth1Data
-	Eth1DepositIndex string
-	//Registry
-	Validators []ValidatorDetails
-	Balances   []Gwei
-	//Randomness
-	RandaoMixes []Bytes32
-	//Slashings
-	Slashings []Gwei
-	//Attestations
-	PreviousEpochAttestations []PendingAttestation
-	CurrentEpochAttestations  []PendingAttestation
-	//Finality
-	//JustificationBits           []Bitvector
-	JustificationBits           any
-	PreviousJustifiedCheckpoint Checkpoint
-	CurrentJustifiedCheckpoint  Checkpoint
-	FinalizedCheckpoint         Checkpoint
 }

@@ -9,22 +9,15 @@ import (
 
 	"github.com/cbergoon/merkletree"
 	"github.com/ethereum/go-ethereum/ethclient"
-	ssz "github.com/prysmaticlabs/go-ssz"
 )
 
+/**
+This file is now OBSOLETE.
+
+Also belongs to the initial attempts of proving validator information
+*/
+
 type RootHash [32]byte
-
-type BeaconBlock struct {
-	Slot          uint64
-	ProposerIndex uint64
-	ParentRoot    RootHash
-	StateRoot     RootHash
-	BodyRoot      RootHash
-}
-
-func (bb *BeaconBlock) HashTreeRoot() (RootHash, error) {
-	return ssz.HashTreeRoot(bb)
-}
 
 func AssembleBeaconRootProofData(
 	clint *ethclient.Client,
