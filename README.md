@@ -14,6 +14,17 @@ which is parsed and then processed as MerkleTrees, of which then proofs are gene
 The test files are included in the repo.
 
 To execute parsing and proof generation, run `go run main.go`
+This will generate a proof for a hardcoded default randao index of 7. 
+It is possible to pass it a custom value and the generate command:
+`go run main.go generate 5` (just passing `go run main.go generate` will also use the default).
+
+There is also a verification function:
+`go run main.go verify <leaf> <proof> <root> <target>`. There is only limited argument sanity checks.
+The arguments format expected:
+    * leaf: hex-encoded hash
+    * proof: comma-separated string list of hex-encoded hashes 
+    * root: hex-encoded hash 
+    * target: integer
 
 To execute the tests, which also verify the proofs, run `go test -v ./pkg/...`
 

@@ -60,4 +60,14 @@ func TestRandaoProofGeneration(t *testing.T) {
 	leafhash = hash(leaf)
 	ok = VerifyProof(leafhash, proof.Siblings, tree.Root, target)
 	require.True(t, ok)
+
+	// now some negative tests
+	ok = VerifyProof(tree.Root, proof.Siblings, leafhash, target)
+	require.False(t, ok)
+	ok = VerifyProof(tree.Root, proof.Siblings, leafhash, 42)
+	require.False(t, ok)
+	ok, err = tree.Verify(blocks[0], proof)
+	require.False(t, ok)
+	require.Empty(t, err)
+
 }

@@ -94,6 +94,9 @@ func AssembleRandaoProof(
 
 	// print results
 	log.Printf("randao_mixes root: %x\n", results.RandaoMixesTree.Root)
+	// let's skip error checking here...
+	b, _ := results.RandaoMixesDataBlocks[results.RandaoTargetIndex].Serialize()
+	log.Printf("randao leaf: %x\n", hash(b))
 	log.Print("randao proof: [")
 	for i, p := range results.RandaoProof.Siblings {
 		fmt.Printf(" %x", p)
@@ -102,7 +105,11 @@ func AssembleRandaoProof(
 		}
 	}
 	fmt.Print(" ]\n")
+	fmt.Println()
 	log.Printf("beacon state root: %x\n", results.BeaconStateTree.Root)
+	// let's skip error checking here...
+	b, _ = results.BeaconStateDataBlocks[results.BeaconStateTargetIndex].Serialize()
+	log.Printf("beacon state leaf: %x\n", hash(b))
 	log.Print("randao_mixes proof: [")
 	for i, p := range results.RandaoMixesProof.Siblings {
 		fmt.Printf(" %x", p)
@@ -111,7 +118,10 @@ func AssembleRandaoProof(
 		}
 	}
 	fmt.Print(" ]\n")
+	fmt.Println()
 	log.Printf("block tree root: %x\n", results.BlockRootTree.Root)
+	b, _ = results.BlockRootDataBlocks[results.BlockRootTargetIndex].Serialize()
+	log.Printf("block root leaf: %x\n", hash(b))
 	log.Print("state proof: [")
 	for i, p := range results.StateProof.Siblings {
 		fmt.Printf(" %x", p)
