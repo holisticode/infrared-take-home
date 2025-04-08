@@ -5,7 +5,14 @@ This repository contains a submission to the take home task as specified at
 https://gist.github.com/red4626/2b7dbe91d351e0a5fc25d89704fd38a7
 
 ## Goal
-Implement an implementation for merkle proof generation of Randao data 
+Implement an implementation for merkle proof generation of Randao data.
+
+## Artefacts
+To address the requirements of the project, the folder `liquid-staking` constains a very high-level
+overview of how LSD (Liquid Staking Derivatives) can interact with EIP-4788.
+
+The major part of the assignment has been addressed by implementing a simple
+proof generation implementation, which is documented in the following.
 
 ## Implementation 
 The presented solution uses JSON files to represent beacon state and block root information,
